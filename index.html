@@ -452,6 +452,101 @@
     text-decoration:underline;
   }
 
+  .stage-left{
+    display:flex;
+    flex-direction:column;
+    gap:20px;
+    min-width:0;
+  }
+
+  /* ---------- COUNTY TABLE ---------- */
+  .table-panel{
+    background:var(--card);
+    border:1px solid var(--rule);
+    border-radius:10px;
+    box-shadow:var(--shadow);
+    padding:18px 18px 6px;
+    display:flex;
+    flex-direction:column;
+    min-height:0;
+  }
+  .table-panel-head{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-end;
+    gap:12px;
+    flex-wrap:wrap;
+    margin-bottom:10px;
+  }
+  .table-panel h2{
+    font-family:var(--font-display);
+    font-size:16px;
+    margin:0 0 2px;
+    font-weight:600;
+  }
+  .table-count{
+    font-family:var(--font-mono);
+    font-size:11px;
+    color:var(--ink-soft);
+    white-space:nowrap;
+  }
+  .table-scroll{
+    overflow-x:auto;
+    overflow-y:auto;
+    max-height:420px;
+    border-top:1px solid var(--rule-soft);
+  }
+  #county-table{
+    width:100%;
+    border-collapse:collapse;
+    font-size:13px;
+  }
+  #county-table caption{
+    text-align:left;
+    font-family:var(--font-mono);
+    font-size:11px;
+    color:var(--ink-soft);
+    padding:8px 0;
+  }
+  #county-table thead th{
+    position:sticky;
+    top:0;
+    background:var(--card);
+    text-align:left;
+    font-family:var(--font-mono);
+    font-size:10.5px;
+    letter-spacing:.06em;
+    text-transform:uppercase;
+    color:var(--ink-soft);
+    padding:10px 12px;
+    border-bottom:2px solid var(--ink);
+    white-space:nowrap;
+  }
+  #county-table tbody tr{
+    border-bottom:1px solid var(--rule-soft);
+    cursor:pointer;
+  }
+  #county-table tbody tr:hover{ background:var(--parchment-deep); }
+  #county-table tbody tr.selected{ background:var(--sgip-on-soft); }
+  #county-table tbody tr:focus-visible{
+    outline:2px solid var(--gold);
+    outline-offset:-2px;
+  }
+  #county-table tbody tr.zero-row td{ color:var(--ink-soft); }
+  #county-table td{
+    padding:8px 12px;
+    white-space:nowrap;
+  }
+  #county-table td.county-name{
+    font-weight:600;
+    font-family:var(--font-body);
+  }
+  #county-table td.num{
+    font-family:var(--font-mono);
+    text-align:right;
+  }
+
+  /* ---------- FOOTER ---------- */
   footer{
     margin-top:24px;
     padding-top:14px;
@@ -532,15 +627,37 @@
   </div>
 
   <div class="stage">
-    <div class="map-panel">
-      <h2>95 counties</h2>
-      <p class="map-caption">Hover for a quick read, click to open the county dossier.</p>
-      <svg id="tn-map" viewBox="598 328 163 64" xmlns="http://www.w3.org/2000/svg" role="group" aria-label="Map of Tennessee counties, 95 selectable counties"></svg>
-      <div class="legend">
-        <span id="legend-min">0</span>
-        <div class="legend-bar" id="legend-bar"></div>
-        <span id="legend-max">0</span>
+    <div class="stage-left">
+      <div class="map-panel">
+        <h2>95 counties</h2>
+        <p class="map-caption">Hover for a quick read, click to open the county dossier.</p>
+        <svg id="tn-map" viewBox="598 328 163 64" xmlns="http://www.w3.org/2000/svg" role="group" aria-label="Map of Tennessee counties, 95 selectable counties"></svg>
+        <div class="legend">
+          <span id="legend-min">0</span>
+          <div class="legend-bar" id="legend-bar"></div>
+          <span id="legend-max">0</span>
+        </div>
       </div>
+
+      <section class="table-panel" aria-labelledby="table-heading">
+        <div class="table-panel-head">
+          <div>
+            <h2 id="table-heading">Counties</h2>
+            <p class="map-caption">All 95 counties. Click a row to open its dossier.</p>
+          </div>
+          <span class="table-count" id="table-count"></span>
+        </div>
+        <div class="table-scroll">
+          <table id="county-table">
+            <thead>
+              <tr>
+                <th scope="col">County</th>
+              </tr>
+            </thead>
+            <tbody id="county-table-body"></tbody>
+          </table>
+        </div>
+      </section>
     </div>
 
     <div class="dossier" id="dossier" role="region" aria-live="polite" aria-label="County dossier">
@@ -566,13 +683,19 @@ window.MAP_DATA = {"counties":[{"id":"47151","name":"Scott","d":"M699.886,341.14
 
   const TYPES = ['Utility','City/Town','Quasi','LEA','Government','Highway','HousingAuth','911','DevDistrict','Library'];
 
+  // county -> grand division, from the full unfiltered dataset (doesn't change with filters)
+  const countyRegion = {};
+  agencies.forEach(a=>{ if(!countyRegion[a.county]) countyRegion[a.county] = a.region; });
+
   const state = {
     metric: 'total',
     region: 'All',
     sgip: 'All',
     types: new Set(),           // empty = all types
     search: '',
-    selectedCounty: null
+    selectedCounty: null,
+    sortKey: 'county',
+    sortDir: 'asc'
   };
 
   // ---------- build type chips ----------
@@ -768,6 +891,39 @@ window.MAP_DATA = {"counties":[{"id":"47151","name":"Scott","d":"M699.886,341.14
     return d.innerHTML;
   }
 
+  // ---------- county table ----------
+  const tableBody = document.getElementById('county-table-body');
+  const tableCount = document.getElementById('table-count');
+
+  function renderTable(statsByCounty){
+    const names = counties.map(c=>c.name).sort((a,b)=>a.localeCompare(b));
+
+    tableBody.innerHTML = names.map(name=>{
+      const s = statsByCounty[name];
+      const hasMatches = !!(s && s.total > 0);
+      const filtersActive = state.region!=='All' || state.sgip!=='All' || state.types.size>0 || state.search;
+      return `
+        <tr class="${state.selectedCounty===name ? 'selected' : ''} ${filtersActive && !hasMatches ? 'zero-row' : ''}"
+            data-county="${escapeHtml(name)}" tabindex="0" role="button"
+            aria-label="${escapeHtml(name)} County, open dossier">
+          <td class="county-name">${escapeHtml(name)}</td>
+        </tr>
+      `;
+    }).join('');
+
+    tableCount.textContent = `${names.length} counties`;
+
+    tableBody.querySelectorAll('tr').forEach(tr=>{
+      tr.addEventListener('click', ()=> selectCounty(tr.dataset.county));
+      tr.addEventListener('keydown', (e)=>{
+        if(e.key === 'Enter' || e.key === ' '){
+          e.preventDefault();
+          selectCounty(tr.dataset.county);
+        }
+      });
+    });
+  }
+
   // ---------- main render ----------
   function render(){
     // toolbar active states
@@ -817,6 +973,7 @@ window.MAP_DATA = {"counties":[{"id":"47151","name":"Scott","d":"M699.886,341.14
     document.getElementById('legend-max').textContent = state.metric==='sgipPct' ? '100%' : Math.round(max).toLocaleString();
 
     renderDossier(list, statsByCounty);
+    renderTable(statsByCounty);
   }
 
   // ---------- event wiring ----------

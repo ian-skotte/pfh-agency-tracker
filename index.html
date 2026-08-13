@@ -643,7 +643,7 @@
         <div class="table-panel-head">
           <div>
             <h2 id="table-heading">Counties</h2>
-            <p class="map-caption">All 95 counties. Click a row to open its dossier.</p>
+            <p class="map-caption" id="table-caption">All 95 counties. Click a row to open its dossier.</p>
           </div>
           <span class="table-count" id="table-count"></span>
         </div>
@@ -894,26 +894,41 @@ window.MAP_DATA = {"counties":[{"id":"47151","name":"Scott","d":"M699.886,341.14
   // ---------- county table ----------
   const tableBody = document.getElementById('county-table-body');
   const tableCount = document.getElementById('table-count');
+  const tableCaption = document.getElementById('table-caption');
 
   function renderTable(statsByCounty){
-    const names = counties.map(c=>c.name).sort((a,b)=>a.localeCompare(b));
+    const filtersActive = state.region!=='All' || state.sgip!=='All' || state.types.size>0 || !!state.search;
 
-    tableBody.innerHTML = names.map(name=>{
-      const s = statsByCounty[name];
-      const hasMatches = !!(s && s.total > 0);
-      const filtersActive = state.region!=='All' || state.sgip!=='All' || state.types.size>0 || state.search;
-      return `
-        <tr class="${state.selectedCounty===name ? 'selected' : ''} ${filtersActive && !hasMatches ? 'zero-row' : ''}"
+    const names = counties
+      .map(c=>c.name)
+      .filter(name=>{
+        if(!filtersActive) return true;
+        const s = statsByCounty[name];
+        return !!(s && s.total > 0);
+      })
+      .sort((a,b)=>a.localeCompare(b));
+
+    if(names.length === 0){
+      tableBody.innerHTML = `<tr class="zero-row"><td>No counties match the current filters.</td></tr>`;
+    } else {
+      tableBody.innerHTML = names.map(name=>`
+        <tr class="${state.selectedCounty===name ? 'selected' : ''}"
             data-county="${escapeHtml(name)}" tabindex="0" role="button"
             aria-label="${escapeHtml(name)} County, open dossier">
           <td class="county-name">${escapeHtml(name)}</td>
         </tr>
-      `;
-    }).join('');
+      `).join('');
+    }
 
-    tableCount.textContent = `${names.length} counties`;
+    tableCount.textContent = filtersActive
+      ? `${names.length} of ${counties.length} counties`
+      : `${names.length} counties`;
 
-    tableBody.querySelectorAll('tr').forEach(tr=>{
+    tableCaption.textContent = filtersActive
+      ? `${names.length} ${names.length===1 ? 'county matches' : 'counties match'} your current filters. Click a row to open its dossier.`
+      : `All ${counties.length} counties. Click a row to open its dossier.`;
+
+    tableBody.querySelectorAll('tr[data-county]').forEach(tr=>{
       tr.addEventListener('click', ()=> selectCounty(tr.dataset.county));
       tr.addEventListener('keydown', (e)=>{
         if(e.key === 'Enter' || e.key === ' '){
